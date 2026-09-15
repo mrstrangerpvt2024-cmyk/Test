@@ -144,7 +144,6 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setname", setname))
     app.add_handler(CommandHandler("setlink", setlink))
@@ -152,8 +151,9 @@ def main():
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CommandHandler("generate", generate))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-
-    app.run_polling()
+    
+    # Directly call run_polling without asyncio.run()
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
