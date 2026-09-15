@@ -1,109 +1,104 @@
 import os
-import re
-from pathlib import Path
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ConversationHandler,
+    ContextTypes,
+    filters,
+)
 
-BASE = Path(__file__).resolve().parent
-ORIGINAL_FILENAME = "#Test-32 (Metal   Non Metal. ).html"
-TEMPLATE = BASE / "template" / ORIGINAL_FILENAME
-DEFAULT_NAME = "𝚳 𝐑 𝐒 𝐓 𝐑 𝚲 𝚴 𝐆 𝐄 𝐑 ™"
-DEFAULT_LINK = "https://t.me/ENGLISH_BY_PRASHANT_SOLANKI_SIRR"
-
-user_config = {}
-
-def get_cfg(user_id):
-    return user_config.setdefault(user_id, {"name": DEFAULT_NAME, "link": DEFAULT_LINK})
-
-def valid_telegram_link(link: str) -> bool:
-    return bool(re.fullmatch(r"https?://t\.me/[A-Za-z0-9_+\-/]+/?", link.strip()))
-
-def build_html(name: str, link: str) -> str:
-    html = TEMPLATE.read_text(encoding="utf-8")
-    # Replace the template's current brand name.
-    html = html.replace(DEFAULT_NAME, name)
-    # Replace every occurrence of the template Telegram URL.
-    html = html.replace(DEFAULT_LINK, link)
-    return html
+WAITING_FILE, WAITING_NAME, WAITING_LINK = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 HTML Name + Telegram Link Bot\n\n"
-        "Commands:\n"
-        "/setname Your Name\n"
-        "/setlink https://t.me/your_channel\n"
-        "/generate  → ready HTML file\n"
-        "/show  → current name/link\n"
-        "/reset  → default values\n\n"
-        "Example:\n"
-        "/setname 𝚳 𝐑 𝐒 𝐓 𝐑 𝚲 𝚴 𝐆 𝐄 𝐑 ™\n"
-        "/setlink https://t.me/mychannel\n"
-        "/generate"
-    )
+    await update.message.reply_text("Namaste! Kripya apni HTML file bhejain jise edit karna hai.")
+    return WAITING_FILE
 
-async def setname(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("❌ Example: /setname My Channel Name")
-        return
-    name = " ".join(context.args).strip()
-    if len(name) > 120:
-        await update.message.reply_text("❌ Name too long. Keep it under 120 characters.")
-        return
-    get_cfg(update.effective_user.id)["name"] = name
-    await update.message.reply_text(f"✅ Name set to:\n{name}")
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    document = update.message.document
+    
+    if not document.file_name.endswith('.html'):
+        await update.message.reply_text("Kripya sirf valid .html file hi bhejein.")
+        return WAITING_FILE
 
-async def setlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("❌ Example: /setlink https://t.me/mychannel")
-        return
-    link = context.args[0].strip()
-    if not valid_telegram_link(link):
-        await update.message.reply_text("❌ Valid Telegram link bhejo, e.g. https://t.me/mychannel")
-        return
-    get_cfg(update.effective_user.id)["link"] = link.rstrip("/")
-    await update.message.reply_text(f"✅ Telegram link set to:\n{link.rstrip('/')}")
+    file = await document.get_file()
+    file_path = f"temp_{document.file_name}"
+    await file.download_to_drive(file_path)
 
-async def show(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cfg = get_cfg(update.effective_user.id)
-    await update.message.reply_text(f"Current name:\n{cfg['name']}\n\nCurrent link:\n{cfg['link']}")
+    context.user_data['file_path'] = file_path
+    context.user_data['original_filename'] = document.file_name
 
-async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_config[update.effective_user.id] = {"name": DEFAULT_NAME, "link": DEFAULT_LINK}
-    await update.message.reply_text("♻️ Name aur link default par reset ho gaye.")
+    await update.message.reply_text("File mil gayi! Ab bataiye aapko konsa **Owner/Brand Name** replace karna hai?")
+    return WAITING_NAME
 
-async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cfg = get_cfg(update.effective_user.id)
+async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['new_name'] = update.message.text
+    await update.message.reply_text("Name save ho gaya! Ab bataiye konsa **Link** replace karna hai?")
+    return WAITING_LINK
+
+async def handle_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_link = update.message.text
+    new_name = context.user_data['new_name']
+    file_path = context.user_data['file_path']
+    original_filename = context.user_data['original_filename']
+
+    await update.message.reply_text("File process ho rahi hai, kripya thoda wait karein...")
+
     try:
-        html = build_html(cfg["name"], cfg["link"])
-        out = BASE / f"tmp_{update.effective_user.id}.html"
-        out.write_text(html, encoding="utf-8")
-        with out.open("rb") as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Dynamic Replace Logic
+        modified_content = content.replace("🔥 Custom Brand Name 🔥", new_name)
+        modified_content = modified_content.replace("https://t.me/YourTelegramChannelLink", new_link)
+        modified_content = modified_content.replace("{{OWNER_TAG}}", new_name)
+        modified_content = modified_content.replace("{{JOIN_CHANNEL_LINK}}", new_link)
+
+        output_filename = f"updated_{original_filename}"
+        with open(output_filename, 'w', encoding='utf-8') as f:
+            f.write(modified_content)
+
+        with open(output_filename, 'rb') as f:
             await update.message.reply_document(
                 document=f,
-                filename=ORIGINAL_FILENAME,
-                caption=ORIGINAL_FILENAME
+                caption="✅ Aapki modified HTML file ready hai!"
             )
-        out.unlink(missing_ok=True)
+
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        if os.path.exists(output_filename):
+            os.remove(output_filename)
+
     except Exception as e:
-        await update.message.reply_text(f"❌ Generate error: {type(e).__name__}: {e}")
+        await update.message.reply_text(f"File process karne me error aaya: {str(e)}")
 
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await start(update, context)
+    return ConversationHandler.END
 
-def main():
-    token = os.getenv("BOT_TOKEN")
-    if not token:
-        raise RuntimeError("BOT_TOKEN environment variable is missing")
-    app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("setname", setname))
-    app.add_handler(CommandHandler("setlink", setlink))
-    app.add_handler(CommandHandler("show", show))
-    app.add_handler(CommandHandler("reset", reset))
-    app.add_handler(CommandHandler("generate", generate))
-    print("Bot started")
-    app.run_polling(drop_pending_updates=True)
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Process cancel kar diya gaya hai.")
+    return ConversationHandler.END
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    # Token Environment Variable se automatic load hoga
+    BOT_TOKEN = os.environ.get("BOT_TOKEN")
+    
+    if not BOT_TOKEN:
+        print("Error: BOT_TOKEN Environment Variable nahi mila!")
+    else:
+        app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('start', start)],
+            states={
+                WAITING_FILE: [MessageHandler(filters.Document.ALL, handle_document)],
+                WAITING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
+                WAITING_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_link)],
+            },
+            fallbacks=[CommandHandler('cancel', cancel)],
+        )
+
+        app.add_handler(conv_handler)
+        print("Bot running...")
+        app.run_polling()
+        
