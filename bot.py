@@ -1,18 +1,33 @@
 import os
 import re
 import tempfile
+import threading
 from pathlib import Path
+from flask import Flask
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters
 )
 
+# --- FLASK HEALTH CHECK SERVER ---
+web_app = Flask(__name__)
+
+@web_app.route('/')
+def health_check():
+    return "Bot is running smoothly!", 200
+
+def run_flask():
+    port = int(os.getenv("PORT", 8080))
+    web_app.run(host="0.0.0.0", port=port)
+
+
+# --- TELEGRAM BOT LOGIC ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN environment variable is missing.")
 
-# Per-user temporary settings. They reset if the bot restarts.
+# Per-user temporary settings.
 user_config = {}
 
 def get_config(user_id):
@@ -25,7 +40,6 @@ def get_config(user_id):
 
 def replace_html(html, name=None, link=None):
     if name:
-        # Replace common navbar/title brand text while preserving the rest.
         patterns = [
             r'(Lαɳɳιʂƚҽɾ ꝈօվąӀ)',
             r'(𝚳\s*𝐑\s*𝐒\s*𝐓\s*𝐑\s*𝚲\s*𝚴\s*𝐆\s*𝐄\s*𝐑\s*™)',
@@ -33,7 +47,6 @@ def replace_html(html, name=None, link=None):
         for p in patterns:
             html = re.sub(p, name, html)
 
-        # If a visible title/brand isn't one of the defaults, replace title text.
         html = re.sub(
             r'(<title>\s*)[^<]*(\s*</title>)',
             lambda m: m.group(1) + name + m.group(2),
@@ -43,7 +56,6 @@ def replace_html(html, name=None, link=None):
         )
 
     if link:
-        # Replace Telegram links while leaving unrelated links untouched.
         html = re.sub(r'https://t\.me/[A-Za-z0-9_+/?=-]+', link, html)
 
     return html
@@ -142,8 +154,13 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=c["filename"],
         )
 
+# --- MAIN EXECUTION ---
 def main():
+    # Flask ko alag thread me start karna zaroori hai
+    threading.Thread(target=run_flask, daemon=True).start()
+
     app = Application.builder().token(BOT_TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setname", setname))
     app.add_handler(CommandHandler("setlink", setlink))
@@ -152,7 +169,7 @@ def main():
     app.add_handler(CommandHandler("generate", generate))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     
-    # Directly call run_polling without asyncio.run()
+    # Direct sync call (No asyncio.run ya await)
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
