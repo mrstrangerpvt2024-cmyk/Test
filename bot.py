@@ -2,32 +2,34 @@ import os
 import re
 import tempfile
 import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
-from flask import Flask
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters
 )
 
-# --- FLASK HEALTH CHECK SERVER ---
-web_app = Flask(__name__)
-
-@web_app.route('/')
-def health_check():
-    return "Bot is running smoothly!", 200
-
-def run_flask():
-    port = int(os.getenv("PORT", 8080))
-    web_app.run(host="0.0.0.0", port=port)
-
-
-# --- TELEGRAM BOT LOGIC ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN environment variable is missing.")
 
-# Per-user temporary settings.
+# Dummy HTTP server taaki Railway Web Service Crash na ho
+class SimpleServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, format, *args):
+        pass
+
+def run_http_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), SimpleServer)
+    server.serve_forever()
+
+# User Settings
 user_config = {}
 
 def get_config(user_id):
@@ -154,13 +156,13 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=c["filename"],
         )
 
-# --- MAIN EXECUTION ---
+# Main block ko synchronous rakha gaya hai taaki event loop crash bilkul na ho
 def main():
-    # Flask ko alag thread me start karna zaroori hai
-    threading.Thread(target=run_flask, daemon=True).start()
+    # Railway health check pass karne ke liye built-in HTTP server
+    threading.Thread(target=run_http_server, daemon=True).start()
 
     app = Application.builder().token(BOT_TOKEN).build()
-    
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setname", setname))
     app.add_handler(CommandHandler("setlink", setlink))
@@ -168,8 +170,7 @@ def main():
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CommandHandler("generate", generate))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    
-    # Direct sync call (No asyncio.run ya await)
+
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
