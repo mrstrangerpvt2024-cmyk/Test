@@ -142,8 +142,9 @@ async def generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=c["filename"],
         )
 
-async def main():
+def main():
     app = Application.builder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setname", setname))
     app.add_handler(CommandHandler("setlink", setlink))
@@ -151,8 +152,8 @@ async def main():
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(CommandHandler("generate", generate))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    await app.run_polling()
+
+    app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
